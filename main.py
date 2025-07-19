@@ -1,11 +1,19 @@
 from fastapi import FastAPI, Request
-import os
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
-from openai import OpenAI  # Assuming 'openai' is the OpenRouter client package
+import os
+from openai import OpenAI
 
 load_dotenv()
 
 app = FastAPI()
+
+# Mount static files (optional if you have any CSS/JS/images)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+templates = Jinja2Templates(directory="templates")
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
@@ -43,13 +51,16 @@ async def talk_gamemaster(request: Request):
                 "HTTP-Referer": "http://localhost:8000",
                 "X-Title": "Cold War GM API",
             },
-            extra_body={},  # can be omitted if not needed
         )
+        content = completion.choices[0].message.content
+        return {"response": content}
     except Exception as e:
         return {"error": str(e)}
 
-    content = completion.choices[0].message.content
-    return {"response": content}
-    @app.get("/ping")
-    async def ping():
-        return {"ping": "pong"}
+@app.get("/", response_class=HTMLResponse)
+async def get_chat(request: Request):
+    return templates.TemplateResponse("chat.html", {"request": request})
+
+@app.get("/ping")
+async def ping():
+    return {"ping": "pong"}
