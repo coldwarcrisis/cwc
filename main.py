@@ -22,14 +22,9 @@ client = OpenAI(
     api_key=OPENROUTER_API_KEY,
 )
 
-SYSTEM_PROMPT = {
-    "role": "system",
-    "content": (
-        "You are the Cold War Game Master. "
-        "You narrate events, respond to player inputs, and maintain a rich historical atmosphere. "
-        "Keep replies concise and in character."
-    ),
-}
+# Load system prompt from external file
+with open("system_prompt.txt", "r", encoding="utf-8") as f:
+    SYSTEM_PROMPT = {"role": "system", "content": f.read()}
 
 @app.post("/talk/gamemaster")
 async def talk_gamemaster(request: Request):
