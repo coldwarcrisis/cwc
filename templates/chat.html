@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cold War Game Master</title>
+  <style>
+    body { font-family: Arial; margin: 2em; background: #f4f4f4; }
+    #chatbox { background: white; padding: 1em; border-radius: 8px; height: 400px; overflow-y: auto; border: 1px solid #ccc; }
+    .message { margin: 0.5em 0; }
+    .user { color: blue; }
+    .gm { color: darkred; }
+  </style>
+</head>
+<body>
+  <h2>Cold War Game Master</h2>
+  <div id="chatbox"></div>
+  <input type="text" id="messageInput" placeholder="Type your message..." style="width:80%;">
+  <button onclick="sendMessage()">Send</button>
+
+  <script>
+    async function sendMessage() {
+      const input = document.getElementById("messageInput");
+      const chatbox = document.getElementById("chatbox");
+      const userMessage = input.value;
+      if (!userMessage) return;
+
+      chatbox.innerHTML += `<div class="message user"><strong>You:</strong> ${userMessage}</div>`;
+      input.value = "";
+
+      const response = await fetch("/talk/gamemaster", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage })
+      });
+
+      const data = await response.json();
+      chatbox.innerHTML += `<div class="message gm"><strong>GM:</strong> ${data.response}</div>`;
+      chatbox.scrollTop = chatbox.scrollHeight;
+    }
+  </script>
+</body>
+</html>
