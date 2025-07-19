@@ -50,3 +50,6 @@ async def talk_gamemaster(request: Request):
 
     content = completion.choices[0].message.content
     return {"response": content}
+    @app.get("/ping")
+async def ping():
+    return {"ping": "pong"}
