@@ -3,7 +3,45 @@
 <head>
   <meta charset="UTF-8">
   <title>Cold War Game Master</title>
-  <link rel="stylesheet" href="style.css">
+  <style>
+    #chatbox {
+    font-family: Georgia, serif;
+    white-space: pre-wrap; /* This preserves line breaks and spacing */
+    line-height: 1.6;
+    padding: 1em;
+    max-height: 80vh;
+    overflow-y: auto;
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+  }
+
+  .message {
+    margin-bottom: 1.5em;
+  }
+
+  .user {
+    color: #003366;
+    font-weight: bold;
+  }
+
+  .gm {
+    color: #222;
+    background-color: #fffbea;
+    padding: 0.5em;
+    border-left: 4px solid #999900;
+    border-radius: 4px;
+  }
+
+  .gm strong {
+    color: #663300;
+  }
+
+  .gm-options {
+    margin-top: 0.5em;
+    font-weight: bold;
+  }
+</style>
 </head>
 
 <body>
