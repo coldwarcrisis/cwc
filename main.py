@@ -52,4 +52,4 @@ async def talk_gamemaster(request: Request):
     return {"response": content}
     @app.get("/ping")
     async def ping():
-    return {"ping": "pong"}
+        return {"ping": "pong"}
