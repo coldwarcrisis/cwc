@@ -37,4 +37,4 @@ class TurnManager:
         return user_input.strip() + "\n\n" + self.system_message()
     def should_advance_turn(self, user_input):
     # You can refine this logic if needed (e.g. only if user hits a button or types specific keyword)
-    return True  # For now, always advance the turn on each message
+        return True  # For now, always advance the turn on each message
