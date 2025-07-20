@@ -12,6 +12,7 @@ class Session(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     user_id: Mapped[str] = mapped_column(String, index=True)
     pacing_mode: Mapped[str] = mapped_column(String)
+    current_turn: Mapped[int] = mapped_column(Integer)
 
     messages: Mapped[list["Message"]] = relationship(
         "Message",
@@ -19,6 +20,7 @@ class Session(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    in_game_date: Mapped[str] = mapped_column(String, default="1955-05-04")
 
 class Message(Base):
     __tablename__ = "messages"
@@ -29,7 +31,7 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     turn_number: Mapped[int] = mapped_column(Integer)
     pacing_mode: Mapped[str] = mapped_column(String)    # e.g. 'green', 'yellow', 'red'
-    in_game_date: Mapped[str] = mapped_column(String)   # stored as string (e.g. "1969-10-12")
+    in_game_date: Mapped[str] = mapped_column(String, default="1955-05-04")
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     session: Mapped["Session"] = relationship("Session", back_populates="messages", lazy="selectin")
