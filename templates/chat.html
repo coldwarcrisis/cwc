@@ -66,8 +66,28 @@
       body: JSON.stringify({ message: userMessage })
     });
 
-    const data = await response.json();
-    chatbox.innerHTML += `<div class="message gm"><strong>GM:</strong> ${data.response}</div>`;
+    try {
+  const response = await fetch("/talk/gamemaster", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: userMessage })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Server error:", response.status, errorText);
+    chatbox.innerHTML += `<div class="message error">[Server Error: ${response.status}] ${errorText}</div>`;
+    return;
+  }
+
+  const data = await response.json();
+  console.log("Parsed JSON:", data);
+
+  chatbox.innerHTML += `<div class="message gm"><strong>GM:</strong> ${data.response}</div>`;
+} catch (err) {
+  console.error("Fetch or parse error:", err);
+  chatbox.innerHTML += `<div class="message error">[Client Error] ${err.message}</div>`;
+}
     chatbox.scrollTop = chatbox.scrollHeight;
   }
 
