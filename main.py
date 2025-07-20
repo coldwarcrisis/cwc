@@ -96,7 +96,9 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
                 "X-Title": "Cold War GM API",
             },
         )
+        print("Full completion response:", completion)   # <---- here
         ai_response = completion.choices[0].message.content
+        print("AI response extracted:", ai_response) 
         turn_manager.handle_ai_response(ai_response)
         turn_num = turn_manager.current_turn()
 
