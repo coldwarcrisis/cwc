@@ -128,7 +128,7 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
         game_session.in_game_date = turn_manager.current_date_str()
         await db.commit()
 
-        return {"response": ai_response}
+        return jsonify({"response": ai_response})
 
     except Exception as e:
         return {"error": str(e)}
