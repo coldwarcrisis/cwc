@@ -109,7 +109,7 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
                 content=player_input,
                 turn_number=turn_num,
                 pacing_mode=turn_manager.current_mode(),
-                in_game_date=turn_manager.current_date()
+                in_game_date=turn_manager.current_date
             ),
             Message(
                 session_id=session_id,
@@ -117,7 +117,7 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
                 content=ai_response,
                 turn_number=turn_num,
                 pacing_mode=turn_manager.current_mode(),
-                in_game_date=turn_manager.current_date()
+                in_game_date=turn_manager.current_date
             ),
         ])
         await db.commit()
