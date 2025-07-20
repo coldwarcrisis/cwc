@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session as DBSession
 from dotenv import load_dotenv
 import os
 from openai import OpenAI
-
 from session_database import async_session
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import AsyncGenerator
 from models import Session as GameSession, Message
 from turn_manager import TurnManager
 
@@ -30,12 +31,9 @@ with open("system_prompt.txt", "r", encoding="utf-8") as f:
 turn_managers = {}
 
 # Dependency to get a DB session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with async_session() as session:
+        yield session
 def get_turn_manager(session_id: str, db: DBSession) -> TurnManager:
     if session_id not in turn_managers:
         # Try to fetch existing state from the DB
