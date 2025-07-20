@@ -62,8 +62,8 @@ class TurnManager:
         self.turn_advanced = True
 
     def should_advance_turn(self, user_input):
-    keywords = ["report", "action", "briefing", "update"]
-    return any(word in user_input.lower() for word in keywords)
+        keywords = ["report", "action", "briefing", "update"]
+        return any(word in user_input.lower() for word in keywords)
 
     def handle_ai_response(self, ai_response):
         self.update_from_ai(ai_response)
