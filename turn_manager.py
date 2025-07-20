@@ -1,12 +1,14 @@
 from datetime import datetime, timedelta
 import re
+import json
+import os
 
 class TurnManager:
     def __init__(self, turn_number=0, pacing='green', current_date_str='1955-05-04'):
         self.turn_number = turn_number
-        self.pacing = pacing.lower()  # Ensure lower case consistency
+        self.pacing = pacing.lower()
         self.current_date = datetime.strptime(current_date_str, '%Y-%m-%d')
-        self.turn_advanced = False  # Internal flag, not persisted
+        self.turn_advanced = False
 
     @classmethod
     def from_dict(cls, state_dict):
@@ -28,7 +30,6 @@ class TurnManager:
             self.current_date += timedelta(days=2)
         elif self.pacing == 'yellow':
             self.current_date += timedelta(days=1)
-        # Red pacing = no time advance
         self.turn_number += 1
         self.turn_advanced = True
 
@@ -61,11 +62,12 @@ class TurnManager:
         self.turn_advanced = True
 
     def should_advance_turn(self, user_input):
-        return True  # Placeholder: logic can be expanded
+    keywords = ["report", "action", "briefing", "update"]
+    return any(word in user_input.lower() for word in keywords)
 
     def handle_ai_response(self, ai_response):
         self.update_from_ai(ai_response)
-        self.turn_advanced = False  # Reset after AI has handled
+        self.turn_advanced = False
 
     # Accessors
     def current_mode(self):

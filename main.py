@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
 import os
 from openai import OpenAI
@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import AsyncGenerator
 from models import Session as GameSession, Message
 from turn_manager import TurnManager
-
+from sqlalchemy import select
 load_dotenv()
 
 app = FastAPI()
@@ -34,38 +34,48 @@ turn_managers = {}
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
-def get_turn_manager(session_id: str, db: DBSession) -> TurnManager:
+def get_turn_manager(session_id: str, game_session: GameSession) -> TurnManager:
     if session_id not in turn_managers:
-        # Try to fetch existing state from the DB
-        session = db.query(GameSession).filter_by(session_id=session_id).first()
-
-        if session:
-            turn_manager = TurnManager(
-                turn_number=session.current_turn,
-                pacing=session.pacing_mode,
-                current_date_str=session.in_game_date
-            )
-        else:
-            # If not in DB yet, create with default state
-            turn_manager = TurnManager()
-
+        turn_manager = TurnManager(
+            turn_number=game_session.current_turn,
+            pacing=game_session.pacing_mode,
+            current_date_str=game_session.in_game_date
+        )
         turn_managers[session_id] = turn_manager
 
     return turn_managers[session_id]
 @app.post("/talk/gamemaster")
-async def talk_gamemaster(request: Request, db: DBSession = Depends(get_db)):
+async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
     data = await request.json()
     player_input = data.get("message", "")
-    session_id = data.get("session_id", "default")  # temp default for simplicity
+    session_id = data.get("session_id", "default")
 
     if not player_input:
         return {"error": "No message provided"}
 
-    # Advance turn if applicable
-    turn_manager = get_turn_manager(session_id, db)
+    # Try to load the session
+    result = await db.execute(select(GameSession).filter_by(session_id=session_id))
+    game_session = result.scalars().first()
+
+    if not game_session:
+        game_session = GameSession(
+            session_id=session_id,
+            agency="SIS",
+            pacing_mode="green",
+            user_id="local",
+            current_turn=0,
+            in_game_date="1955-05-04",
+        )
+        db.add(game_session)
+        await db.commit()
+
+    # Initialize the turn manager
+    turn_manager = get_turn_manager(session_id, game_session)
 
     if turn_manager.should_advance_turn(player_input):
         turn_manager.next_turn()
+
+    # Prepare message for AI
     system_msg = turn_manager.get_system_message()
     pacing_note = turn_manager.get_pacing_instruction()
     full_sys_msg = f"{system_msg}\n{pacing_note}".strip()
@@ -87,27 +97,35 @@ async def talk_gamemaster(request: Request, db: DBSession = Depends(get_db)):
             },
         )
         ai_response = completion.choices[0].message.content
-
-        # Log messages to database
-        game_session = db.query(GameSession).filter_by(session_id=session_id).first()
-        if not game_session:
-            game_session = GameSession(session_id=session_id, agency="SIS", pacing_mode="green", user_id="local")
-            db.add(game_session)
-            db.commit()
-
+        turn_manager.handle_ai_response(ai_response)
         turn_num = turn_manager.current_turn()
 
         db.add_all([
-            Message(session_id=session_id, sender="user", content=player_input, turn_number=turn_num, pacing_mode=turn_manager.current_mode(), in_game_date=turn_manager.current_date()),
-            Message(session_id=session_id, sender="ai", content=ai_response, turn_number=turn_num, pacing_mode=turn_manager.current_mode(), in_game_date=turn_manager.current_date()),
+            Message(
+                session_id=session_id,
+                sender="user",
+                content=player_input,
+                turn_number=turn_num,
+                pacing_mode=turn_manager.current_mode(),
+                in_game_date=turn_manager.current_date()
+            ),
+            Message(
+                session_id=session_id,
+                sender="ai",
+                content=ai_response,
+                turn_number=turn_num,
+                pacing_mode=turn_manager.current_mode(),
+                in_game_date=turn_manager.current_date()
+            ),
         ])
-        db.commit()
+        await db.commit()
 
-        turn_manager.handle_ai_response(ai_response)
+        # Update session
         game_session.current_turn = turn_manager.current_turn()
         game_session.pacing_mode = turn_manager.current_mode()
         game_session.in_game_date = turn_manager.current_date_str()
-        db.commit()
+        await db.commit()
+
         return {"response": ai_response}
 
     except Exception as e:
