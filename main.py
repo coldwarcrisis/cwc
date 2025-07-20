@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import os
 from openai import OpenAI
 
-from database import SessionLocal
+from session_database import async_session
 from models import Session as GameSession, Message
 from turn_manager import TurnManager
 
