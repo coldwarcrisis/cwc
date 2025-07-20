@@ -60,12 +60,6 @@
     chatbox.innerHTML += `<div class="message user"><strong>You:</strong> ${userMessage}</div>`;
     input.value = "";
 
-    const response = await fetch("/talk/gamemaster", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userMessage })
-    });
-
     try {
   const response = await fetch("/talk/gamemaster", {
     method: "POST",
