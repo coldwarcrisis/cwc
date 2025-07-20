@@ -4,3 +4,9 @@ httpx
 python-dotenv
 openai
 jinja2
+sqlalchemy
+psycopg[binary]
+alembic
+aiosqlite
+asyncpg
+databases

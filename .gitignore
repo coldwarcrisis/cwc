@@ -1,3 +1,6 @@
 .env
 __pycache__/
 *.pyc
+turn_manager - Copy.py
+main - Copy.py
+test_connection.py
