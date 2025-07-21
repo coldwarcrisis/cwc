@@ -152,10 +152,17 @@ async def load_session(session_id: str, db: AsyncSession = Depends(get_db)):
         .order_by(Message.timestamp.asc())
     )
     messages = result.scalars().all()
-
+    get_turn_manager(session_id, game_session)
     return {
+        "session_id": session_id,
         "messages": [
             {"sender": m.sender, "content": m.content, "timestamp": m.timestamp.isoformat()}
             for m in messages
-        ]
+        ],
+        "session_metadata": {
+            "pacing_mode": game_session.pacing_mode,
+            "current_turn": game_session.current_turn,
+            "in_game_date": game_session.in_game_date,
+            "agency": game_session.agency,
+        }
     }

@@ -73,13 +73,15 @@
     const response = await fetch(`/session/${sessionId}`);
     const data = await response.json();
 
-    const chatbox = document.getElementById("chatbox");
+    const chatbox = document.getElementById("chat-box");
     data.messages.forEach(msg => {
       const roleClass = msg.sender === "user" ? "user" : "gm";
       const label = msg.sender === "user" ? "You" : "GM";
       chatbox.innerHTML += `<div class="message ${roleClass}"><strong>${label}:</strong> ${msg.content}</div>`;
     });
-
+     if (data.session_metadata) {
+      console.log("Session restored:", data.session_metadata);
+    }
     chatbox.scrollTop = chatbox.scrollHeight;
   } catch (err) {
     console.error("Failed to load previous session:", err);
