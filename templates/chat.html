@@ -98,7 +98,7 @@
 
     const sessionId = getSessionId();  // Your existing method for retrieving session ID
 
-    const endpoint = endTurn ? "/talk/gamemaster/next-turn" : "/talk/gamemaster";
+    const endpoint = "/talk/gamemaster";
 
     try {
       const response = await fetch(endpoint, {
@@ -106,7 +106,8 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: message,
-          session_id: sessionId
+          session_id: sessionId,
+          force_end_turn: endTurn
         })
       });
 
