@@ -48,8 +48,9 @@
   <h2>Cold War Game Master</h2>
   <div id="chatbox"></div>
   <input type="text" id="messageInput" placeholder="Type your message..." style="width:80%;" autofocus>
-  <button onclick="sendMessage()">Send</button>
-
+  <button id="send-button">Send</button>
+<button id="send-end-button">Send & End Turn</button>
+  <small>(Ctrl+Enter to send & end turn)</small>
   <script>
   function getSessionId() {
     const match = document.cookie.match(/(^| )session_id=([^;]+)/);
@@ -84,46 +85,57 @@
     console.error("Failed to load previous session:", err);
   }
 });
-  async function sendMessage() {
-    const input = document.getElementById("messageInput");
-    const chatbox = document.getElementById("chatbox");
-    const userMessage = input.value.trim();
-    if (!userMessage) return;
+  async function sendMessage(endTurn = false) {
+    const input = document.getElementById("user-input");
+    const message = input.value.trim();
+    if (!message) return;
 
-    chatbox.innerHTML += `<div class="message user"><strong>You:</strong> ${userMessage}</div>`;
+    const chatBox = document.getElementById("chat-box");
+    chatBox.innerHTML += `<div><strong>You:</strong> ${message}</div>`;
     input.value = "";
 
+    const sessionId = getSessionId();  // Your existing method for retrieving session ID
+
+    const endpoint = endTurn ? "/talk/gamemaster/next-turn" : "/talk/gamemaster";
+
     try {
-  const response = await fetch("/talk/gamemaster", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: userMessage, session_id: sessionId })
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: message,
+          session_id: sessionId
+        })
+      });
+
+      const data = await response.json();
+      chatBox.innerHTML += `<div><strong>GM:</strong> ${data.reply}</div>`;
+    } catch (error) {
+      chatBox.innerHTML += `<div style="color:red;"><strong>Error:</strong> Failed to contact GM.</div>`;
+      console.error("Error:", error);
+    }
+
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  // Listen for key presses: Enter sends, Ctrl+Enter sends & ends turn
+  document.getElementById("user-input").addEventListener("keydown", function (e) {
+    if (e.ctrlKey && e.key === "Enter") {
+      e.preventDefault();
+      sendMessage(true);  // Send and end turn
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(false);  // Just send
+    }
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Server error:", response.status, errorText);
-    chatbox.innerHTML += `<div class="message error">[Server Error: ${response.status}] ${errorText}</div>`;
-    return;
-  }
+  // Optional: Add Send and Send & End Turn buttons
+  document.getElementById("send-button").addEventListener("click", function () {
+    sendMessage(false);
+  });
 
-  const data = await response.json();
-  console.log("Parsed JSON:", data);
-
-  chatbox.innerHTML += `<div class="message gm"><strong>GM:</strong> ${data.response}</div>`;
-} catch (err) {
-  console.error("Fetch or parse error:", err);
-  chatbox.innerHTML += `<div class="message error">[Client Error] ${err.message}</div>`;
-}
-    chatbox.scrollTop = chatbox.scrollHeight;
-  }
-
-  // Listen for Enter key press on the input box
-  document.getElementById("messageInput").addEventListener("keydown", function(event) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      sendMessage();
-    }
+  document.getElementById("send-end-button").addEventListener("click", function () {
+    sendMessage(true);
   });
   </script>
 </body>
