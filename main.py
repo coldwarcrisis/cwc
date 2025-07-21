@@ -49,6 +49,7 @@ def get_turn_manager(session_id: str, game_session: GameSession) -> TurnManager:
     return turn_managers[session_id]
 @app.post("/talk/gamemaster")
 async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
+    start = time.perf_counter() #latency debug start
     data = await request.json()
     player_input = data.get("message", "")
     session_id = data.get("session_id", "default")
@@ -71,8 +72,8 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
         )
         db.add(game_session)
         await db.commit()
-    start = time.perf_counter()
-    # db load
+    
+   
 
     # Initialize the turn manager
     turn_manager = get_turn_manager(session_id, game_session)
@@ -137,7 +138,8 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
         game_session.pacing_mode = turn_manager.current_mode()
         game_session.in_game_date = turn_manager.current_date_str()
         await db.commit()
-
+        end = time.perf_counter()
+        print(f"Start to Pre AI: {mid1 - start:.2f}s, Pre AI to Post AI: {mid2 - mid1:.2f}s, Post AI to end: {end - mid2:.2f}s")
         return {"response": ai_response}
 
     except Exception as e:
@@ -176,5 +178,4 @@ async def load_session(session_id: str, db: AsyncSession = Depends(get_db)):
             "agency": game_session.agency,
         }
     }
-    end = time.perf_counter()
-    print(f"Start to Pre AI: {mid1 - start:.2f}s, Pre AI to Post AI: {mid2 - mid1:.2f}s, Post AI to end: {end - mid2:.2f}s")
+    
