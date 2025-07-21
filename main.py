@@ -12,6 +12,8 @@ from typing import AsyncGenerator
 from models import Session as GameSession, Message
 from turn_manager import TurnManager
 from sqlalchemy import select
+from functools import partial
+import asyncio
 load_dotenv()
 
 app = FastAPI()
@@ -88,14 +90,16 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
     ]
 
     try:
-        completion = client.chat.completions.create(
+        loop = asyncio.get_running_loop()
+        completion = await loop.run_in_executor(None, partial(
+            client.chat.completions.create,
             model="tngtech/deepseek-r1t2-chimera:free",
             messages=messages,
             extra_headers={
                 "HTTP-Referer": "http://localhost:8000",
                 "X-Title": "Cold War GM API",
             },
-        )
+        ))
         print("Full completion response:", completion)   # <---- here
         ai_response = completion.choices[0].message.content
         print("AI response extracted:", ai_response) 
