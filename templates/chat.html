@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>Cold War Game Master</title>
   <style>
-    #chatbox {
+    #chat-box {
     font-family: Georgia, serif;
     white-space: pre-wrap; /* This preserves line breaks and spacing */
     line-height: 1.6;
@@ -91,7 +91,7 @@
     if (!message) return;
 
     const chatBox = document.getElementById("chat-box");
-    chatBox.innerHTML += `<div><strong>You:</strong> ${message}</div>`;
+    chatBox.innerHTML += `<div class="message user"><strong>You:</strong> ${message}</div>`;
     input.value = "";
 
     const sessionId = getSessionId();  // Your existing method for retrieving session ID
@@ -109,7 +109,7 @@
       });
 
       const data = await response.json();
-      chatBox.innerHTML += `<div><strong>GM:</strong> ${data.response}</div>`;
+      chatBox.innerHTML += `<div class="message gm"><strong>GM:</strong> ${data.response}</div>`;
     } catch (error) {
       chatBox.innerHTML += `<div style="color:red;"><strong>Error:</strong> Failed to contact GM.</div>`;
       console.error("Error:", error);
