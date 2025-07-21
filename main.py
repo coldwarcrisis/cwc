@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Depends
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -139,3 +139,23 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
 @app.get("/", response_class=HTMLResponse)
 async def get_chat(request: Request):
     return templates.TemplateResponse("chat.html", {"request": request})
+@app.get("/session/{session_id}")
+async def load_session(session_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(GameSession).filter_by(session_id=session_id))
+    game_session = result.scalars().first()
+    if not game_session:
+        return JSONResponse(content={"messages": []})  # Session not found
+
+    result = await db.execute(
+        select(Message)
+        .filter_by(session_id=session_id)
+        .order_by(Message.timestamp.asc())
+    )
+    messages = result.scalars().all()
+
+    return {
+        "messages": [
+            {"sender": m.sender, "content": m.content, "timestamp": m.timestamp.isoformat()}
+            for m in messages
+        ]
+    }

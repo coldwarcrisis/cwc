@@ -65,6 +65,25 @@
   sessionId = crypto.randomUUID();  // modern browsers only
   setSessionId(sessionId);
   }
+  window.addEventListener("DOMContentLoaded", async () => {
+  if (!sessionId) return;
+
+  try {
+    const response = await fetch(`/session/${sessionId}`);
+    const data = await response.json();
+
+    const chatbox = document.getElementById("chatbox");
+    data.messages.forEach(msg => {
+      const roleClass = msg.sender === "user" ? "user" : "gm";
+      const label = msg.sender === "user" ? "You" : "GM";
+      chatbox.innerHTML += `<div class="message ${roleClass}"><strong>${label}:</strong> ${msg.content}</div>`;
+    });
+
+    chatbox.scrollTop = chatbox.scrollHeight;
+  } catch (err) {
+    console.error("Failed to load previous session:", err);
+  }
+});
   async function sendMessage() {
     const input = document.getElementById("messageInput");
     const chatbox = document.getElementById("chatbox");
