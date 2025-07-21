@@ -14,6 +14,7 @@ from turn_manager import TurnManager
 from sqlalchemy import select
 from functools import partial
 import asyncio
+import time
 load_dotenv()
 
 app = FastAPI()
@@ -70,6 +71,8 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
         )
         db.add(game_session)
         await db.commit()
+    start = time.perf_counter()
+    # db load
 
     # Initialize the turn manager
     turn_manager = get_turn_manager(session_id, game_session)
@@ -88,7 +91,8 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
         SYSTEM_PROMPT,
         {"role": "user", "content": wrapped_player_input},
     ]
-
+    mid1 = time.perf_counter()
+    # pre AI call
     try:
         loop = asyncio.get_running_loop()
         completion = await loop.run_in_executor(None, partial(
@@ -100,6 +104,8 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
                 "X-Title": "Cold War GM API",
             },
         ))
+        mid2 = time.perf_counter()
+        # raw AI receive
         print("Full completion response:", completion)   # <---- here
         ai_response = completion.choices[0].message.content
         print("AI response extracted:", ai_response) 
@@ -170,3 +176,5 @@ async def load_session(session_id: str, db: AsyncSession = Depends(get_db)):
             "agency": game_session.agency,
         }
     }
+    end = time.perf_counter()
+    print(f"Start to Pre AI: {mid1 - start:.2f}s, Pre AI to Post AI: {mid2 - mid1:.2f}s, Post AI to end: {end - mid2:.2f}s")
