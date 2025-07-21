@@ -49,7 +49,7 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
     data = await request.json()
     player_input = data.get("message", "")
     session_id = data.get("session_id", "default")
-
+    force_end_turn = data.get("force_end_turn", False)
     if not player_input:
         return {"error": "No message provided"}
 
@@ -72,7 +72,7 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
     # Initialize the turn manager
     turn_manager = get_turn_manager(session_id, game_session)
 
-    if turn_manager.should_advance_turn(player_input):
+    if force_end_turn or turn_manager.should_advance_turn(player_input):
         turn_manager.next_turn()
 
     # Prepare message for AI
