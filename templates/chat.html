@@ -109,7 +109,7 @@
       });
 
       const data = await response.json();
-      chatBox.innerHTML += `<div><strong>GM:</strong> ${data.reply}</div>`;
+      chatBox.innerHTML += `<div><strong>GM:</strong> ${data.response}</div>`;
     } catch (error) {
       chatBox.innerHTML += `<div style="color:red;"><strong>Error:</strong> Failed to contact GM.</div>`;
       console.error("Error:", error);
