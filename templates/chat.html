@@ -47,10 +47,24 @@
 <body>
   <h2>Cold War Game Master</h2>
   <div id="chatbox"></div>
-  <input type="text" id="messageInput" placeholder="Type your message..." style="width:80%;">
+  <input type="text" id="messageInput" placeholder="Type your message..." style="width:80%;" autofocus>
   <button onclick="sendMessage()">Send</button>
 
   <script>
+  function getSessionId() {
+    const match = document.cookie.match(/(^| )session_id=([^;]+)/);
+    return match ? match[2] : null;
+  }
+
+  function setSessionId(id) {
+    document.cookie = `session_id=${id}; path=/; max-age=31536000`; // 1 year
+  }
+
+  let sessionId = getSessionId();
+  if (!sessionId) {
+  sessionId = crypto.randomUUID();  // modern browsers only
+  setSessionId(sessionId);
+  }
   async function sendMessage() {
     const input = document.getElementById("messageInput");
     const chatbox = document.getElementById("chatbox");
@@ -64,7 +78,7 @@
   const response = await fetch("/talk/gamemaster", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: userMessage })
+    body: JSON.stringify({ message: userMessage, session_id: sessionId })
   });
 
   if (!response.ok) {
