@@ -177,10 +177,11 @@ async def load_session(session_id: str, db: AsyncSession = Depends(get_db)):
             "agency": game_session.agency,
         }
     }
-@app.post("/session/set-agency")
-async def set_agency(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
+@app.post("/session/set-newgame")
+async def set_newgame(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
     session_id = data.get("session_id")
     agency = data.get("agency")
+
     if not session_id or not agency:
         return {"success": False, "error": "Missing session_id or agency"}
 
@@ -188,8 +189,19 @@ async def set_agency(data: dict = Body(...), db: AsyncSession = Depends(get_db))
     game_session = result.scalars().first()
 
     if not game_session:
-        return {"success": False, "error": "Session not found"}
+        # Create the session if it doesn't exist yet
+        game_session = GameSession(
+            session_id=session_id,
+            agency=agency,
+            pacing_mode="green",
+            user_id="local",
+            current_turn=0,
+            in_game_date="1955-05-04",
+        )
+        db.add(game_session)
+        await db.commit()
+        return {"success": True, "created": True}
 
     game_session.agency = agency
     await db.commit()
-    return {"success": True}
+    return {"success": True, "updated": True}

@@ -110,7 +110,7 @@ async function selectAgency(agency) {
   }
 
   try {
-    const response = await fetch("/session/set-agency", {
+    const response = await fetch("/session/set-newgame", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -139,7 +139,11 @@ async function selectAgency(agency) {
     alert("Failed to contact server.");
   }
 }
-
+if (data.session_metadata && !data.session_metadata.agency) {
+  document.getElementById("agency-overlay").style.display = "flex";
+} else {
+  document.getElementById("agency-overlay").style.display = "none";
+}
   async function sendMessage(endTurn = false) {
     const input = document.getElementById("user-input");
     const message = input.value.trim();
