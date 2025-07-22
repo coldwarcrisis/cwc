@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 import os
 from openai import OpenAI
 from session_database import async_session
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import AsyncGenerator
 from models import Session as GameSession, Message
 from turn_manager import TurnManager
@@ -64,7 +63,7 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
     if not game_session:
         game_session = GameSession(
             session_id=session_id,
-            agency="SIS",
+            agency=None,
             pacing_mode="green",
             user_id="local",
             current_turn=0,
@@ -147,6 +146,22 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
         print("Exception occurred:", e)
         traceback.print_exc()
         return {"error": str(e)}
+@app.post("/session/set-agency")
+async def set_agency(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
+    session_id = data.get("session_id")
+    agency = data.get("agency")
+    if not session_id or not agency:
+        return {"success": False, "error": "Missing session_id or agency"}
+
+    result = await db.execute(select(GameSession).filter_by(session_id=session_id))
+    game_session = result.scalars().first()
+
+    if not game_session:
+        return {"success": False, "error": "Session not found"}
+
+    game_session.agency = agency
+    await db.commit()
+    return {"success": True}
 
 @app.get("/", response_class=HTMLResponse)
 async def get_chat(request: Request):
