@@ -102,12 +102,19 @@
   }
 });
 async function selectAgency(agency) {
-  const sessionId = getSessionId(); // Ensure this function exists and returns the correct ID
+  const sessionId = getSessionId(); // Make sure this exists and returns a valid session ID
+
+  if (!sessionId || !agency) {
+    console.error("Missing session ID or agency");
+    return;
+  }
 
   try {
     const response = await fetch("/session/set-agency", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         session_id: sessionId,
         agency: agency,
@@ -117,14 +124,18 @@ async function selectAgency(agency) {
     const data = await response.json();
 
     if (response.ok && data.success) {
-      document.getElementById("agency-overlay").style.display = "none";
+      // Hide overlay only if agency was set successfully
+      const overlay = document.getElementById("agency-overlay");
+      if (overlay) {
+        overlay.style.display = "none";
+      }
       console.log("Agency set to", agency);
     } else {
-      console.error("Server error:", data);
+      console.error("Failed to set agency:", data.error || "Unknown error");
       alert("Failed to set agency.");
     }
   } catch (err) {
-    console.error("Network error setting agency:", err);
+    console.error("Error communicating with server:", err);
     alert("Failed to contact server.");
   }
 }
