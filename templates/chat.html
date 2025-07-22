@@ -93,6 +93,12 @@
       const label = msg.sender === "user" ? "You" : "GM";
       chatbox.innerHTML += `<div class="message ${roleClass}"><strong>${label}:</strong> ${msg.content}</div>`;
     });
+
+    if (data.session_metadata && !data.session_metadata.agency) {
+      document.getElementById("agency-overlay").style.display = "flex";
+    } else {
+      document.getElementById("agency-overlay").style.display = "none";
+    }
      if (data.session_metadata) {
       console.log("Session restored:", data.session_metadata);
     }
@@ -139,11 +145,7 @@ async function selectAgency(agency) {
     alert("Failed to contact server.");
   }
 }
-if (data.session_metadata && !data.session_metadata.agency) {
-  document.getElementById("agency-overlay").style.display = "flex";
-} else {
-  document.getElementById("agency-overlay").style.display = "none";
-}
+
   async function sendMessage(endTurn = false) {
     const input = document.getElementById("user-input");
     const message = input.value.trim();
