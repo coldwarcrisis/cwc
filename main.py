@@ -14,6 +14,7 @@ from sqlalchemy import select
 from functools import partial
 import asyncio
 import time
+from pathlib import Path
 load_dotenv()
 
 app = FastAPI()
@@ -27,8 +28,7 @@ client = OpenAI(
     api_key=OPENROUTER_API_KEY,
 )
 
-with open("system_prompt.txt", "r", encoding="utf-8") as f:
-    SYSTEM_PROMPT = {"role": "system", "content": f.read()}
+
 
 turn_managers = {}
 
@@ -46,6 +46,18 @@ def get_turn_manager(session_id: str, game_session: GameSession) -> TurnManager:
         turn_managers[session_id] = turn_manager
 
     return turn_managers[session_id]
+
+def load_agency_prompt(agency: str | None) -> dict:
+    agency = agency.upper() if agency else "DEFAULT"
+    allowed_agencies = {"CIA", "KGB", "SIS"}
+    filename = f"{agency}_prompt.txt" if agency in allowed_agencies else "system_prompt.txt"
+    filepath = Path(filename)
+
+    if not filepath.is_file():
+        filepath = Path("system_prompt.txt")  # fallback if missing
+
+    with filepath.open("r", encoding="utf-8") as f:
+        return {"role": "system", "content": f.read()}
 @app.post("/talk/gamemaster")
 async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
     start = time.perf_counter() #latency debug start
@@ -86,11 +98,11 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
     full_sys_msg = f"{system_msg}\n{pacing_note}".strip()
     wrapped_sys_msg = f"\n\n{{{full_sys_msg}}}" if full_sys_msg else ""
     wrapped_player_input = f"{player_input.strip()}{wrapped_sys_msg}"
-
+    system_prompt = load_agency_prompt(game_session.agency)
     messages = [
-        SYSTEM_PROMPT,
+        system_prompt,
         {"role": "user", "content": wrapped_player_input},
-    ]
+    ]   
     mid1 = time.perf_counter()
     # pre AI call
     try:
