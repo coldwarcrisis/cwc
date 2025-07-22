@@ -167,7 +167,16 @@ async def load_session(session_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(GameSession).filter_by(session_id=session_id))
     game_session = result.scalars().first()
     if not game_session:
-        return JSONResponse(content={"messages": []})  # Session not found
+        return JSONResponse(content={
+            "session_id": session_id,
+            "messages": [],
+            "session_metadata": {
+                "pacing_mode": None,
+                "current_turn": 0,
+                "in_game_date": None,
+                "agency": None,
+            }
+        })
 
     result = await db.execute(
         select(Message)
