@@ -168,7 +168,14 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
             traceback.print_exc()
             # Optionally yield error info or end stream gracefully
 
-    return StreamingResponse(stream_response(), media_type="text/plain")
+    headers = {
+    "Cache-Control": "no-cache",
+    "X-Accel-Buffering": "no",
+    "Content-Encoding": "identity",
+    "Transfer-Encoding": "chunked",
+    }
+
+    return StreamingResponse(stream_response(), media_type="text/plain", headers=headers)
 @app.get("/", response_class=HTMLResponse)
 async def get_chat(request: Request):
     return templates.TemplateResponse("chat.html", {"request": request})
