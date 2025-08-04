@@ -66,21 +66,160 @@
   <button id="send-end-button">Send & End Turn</button>
   <small>(Ctrl+Enter to send & end turn)</small>
   <script>
-  function getSessionId() {
-    const match = document.cookie.match(/(^| )session_id=([^;]+)/);
-    return match ? match[2] : null;
-  }
+function getSessionId() {
+  const match = document.cookie.match(/(^| )session_id=([^;]+)/);
+  return match ? match[2] : null;
+}
 
-  function setSessionId(id) {
-    document.cookie = `session_id=${id}; path=/; max-age=31536000`; // 1 year
-  }
+function setSessionId(id) {
+  document.cookie = `session_id=${id}; path=/; max-age=31536000`; // 1 year
+}
 
-  let sessionId = getSessionId();
-  if (!sessionId) {
+let sessionId = getSessionId();
+if (!sessionId) {
   sessionId = crypto.randomUUID();  // modern browsers only
   setSessionId(sessionId);
+}
+
+let ws = null;
+let wsConnected = false;
+let wsMessageQueue = [];  // queue messages sent before WS ready
+
+function connectWebSocket() {
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/talk/gamemaster`);
+  ws.onopen = () => {
+    wsConnected = true;
+    console.log("WebSocket connected");
+    // Send any queued messages that were triggered before connection
+    while (wsMessageQueue.length) {
+      const msg = wsMessageQueue.shift();
+      ws.send(JSON.stringify(msg));
+    }
+  };
+  ws.onmessage = (event) => {
+    appendToLatestGMMessage(event.data);
+  };
+  ws.onclose = () => {
+    wsConnected = false;
+    console.log("WebSocket disconnected, fallback to HTTP");
+  };
+  ws.onerror = (err) => {
+    wsConnected = false;
+    console.log("WebSocket error, fallback to HTTP", err);
+  };
+}
+
+// Append chunks to the last GM message streaming span
+function appendToLatestGMMessage(chunk) {
+  const chatBox = document.getElementById("chat-box");
+  const gmMessages = chatBox.getElementsByClassName("message gm");
+  if (gmMessages.length === 0) return;  // no GM messages yet
+  const lastGMMessage = gmMessages[gmMessages.length - 1];
+  const streamingSpan = lastGMMessage.querySelector(".streaming-response");
+  if (!streamingSpan) return;
+  streamingSpan.textContent += chunk;
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+async function sendMessage(endTurn = false) {
+  const input = document.getElementById("user-input");
+  const message = input.value.trim();
+  if (!message) return;
+
+  const chatBox = document.getElementById("chat-box");
+  chatBox.innerHTML += `<div class="message user"><strong>You:</strong> ${message}</div>`;
+  input.value = "";
+
+  // Disable inputs while streaming
+  input.disabled = true;
+  document.getElementById("send-button").disabled = true;
+  document.getElementById("send-end-button").disabled = true;
+
+  // Add a new GM message container with empty streaming span
+  const gmMessageDiv = document.createElement("div");
+  gmMessageDiv.className = "message gm";
+  gmMessageDiv.innerHTML = `<strong>GM:</strong> <span class="streaming-response"></span>`;
+  chatBox.appendChild(gmMessageDiv);
+
+  if (wsConnected) {
+    // Use WebSocket streaming
+    try {
+      // Send message over WS
+      const msgObj = {
+        message: message,
+        session_id: sessionId,
+        force_end_turn: endTurn,
+      };
+
+      // If WS ready, send directly, else queue
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(msgObj));
+      } else {
+        wsMessageQueue.push(msgObj);
+      }
+    } catch (err) {
+      console.error("WebSocket send error, fallback to HTTP:", err);
+      await fallbackHttpStreaming(message, endTurn, gmMessageDiv);
+    } finally {
+      input.disabled = false;
+      document.getElementById("send-button").disabled = false;
+      document.getElementById("send-end-button").disabled = false;
+      input.focus();
+    }
+  } else {
+    // WebSocket not connected or failed, fallback to HTTP POST streaming
+    await fallbackHttpStreaming(message, endTurn, gmMessageDiv);
   }
-  window.addEventListener("DOMContentLoaded", async () => {
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// Fallback streaming with HTTP POST endpoint
+async function fallbackHttpStreaming(message, endTurn, gmMessageDiv) {
+  const input = document.getElementById("user-input");
+  const chatBox = document.getElementById("chat-box");
+  const responseSpan = gmMessageDiv.querySelector(".streaming-response");
+
+  try {
+    const response = await fetch("/talk/gamemaster", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: message,
+        session_id: sessionId,
+        force_end_turn: endTurn,
+      }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error("Network response was not ok or readable stream missing");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let done = false;
+
+    while (!done) {
+      const { value, done: doneReading } = await reader.read();
+      done = doneReading;
+      if (value) {
+        const chunk = decoder.decode(value, { stream: true });
+        responseSpan.textContent += chunk;
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+    }
+  } catch (error) {
+    responseSpan.innerHTML += `<br><span style="color:red;">[Error receiving response]</span>`;
+    console.error("Fallback HTTP streaming error:", error);
+  } finally {
+    input.disabled = false;
+    document.getElementById("send-button").disabled = false;
+    document.getElementById("send-end-button").disabled = false;
+    input.focus();
+  }
+}
+
+// Try connecting WebSocket on page load
+window.addEventListener("DOMContentLoaded", async () => {
   if (!sessionId) return;
 
   try {
@@ -99,145 +238,37 @@
     } else {
       document.getElementById("agency-overlay").style.display = "none";
     }
-     if (data.session_metadata) {
+    if (data.session_metadata) {
       console.log("Session restored:", data.session_metadata);
     }
     chatbox.scrollTop = chatbox.scrollHeight;
+
+    // Now open WebSocket connection (try primary)
+    connectWebSocket();
   } catch (err) {
     console.error("Failed to load previous session:", err);
   }
 });
-async function selectAgency(agency) {
-  const sessionId = getSessionId(); // Make sure this exists and returns a valid session ID
 
-  if (!sessionId || !agency) {
-    console.error("Missing session ID or agency");
-    return;
+// Listen for key presses: Enter sends, Ctrl+Enter sends & ends turn
+document.getElementById("user-input").addEventListener("keydown", function (e) {
+  if (e.ctrlKey && e.key === "Enter") {
+    e.preventDefault();
+    sendMessage(true);  // Send and end turn
+  } else if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage(false);  // Just send
   }
+});
 
-  try {
-    const response = await fetch("/session/set-newgame", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        session_id: sessionId,
-        agency: agency,
-      }),
-    });
+// Send buttons
+document.getElementById("send-button").addEventListener("click", function () {
+  sendMessage(false);
+});
+document.getElementById("send-end-button").addEventListener("click", function () {
+  sendMessage(true);
+});
+</script>
 
-    const data = await response.json();
-
-    if (response.ok && data.success) {
-      // Hide overlay only if agency was set successfully
-      const overlay = document.getElementById("agency-overlay");
-      if (overlay) {
-        overlay.style.display = "none";
-      }
-      console.log("Agency set to", agency);
-    } else {
-      console.error("Failed to set agency:", data.error || "Unknown error");
-      alert("Failed to set agency.");
-    }
-  } catch (err) {
-    console.error("Error communicating with server:", err);
-    alert("Failed to contact server.");
-  }
-}
-
-  async function sendMessage(endTurn = false) {
-  const input = document.getElementById("user-input");
-  const message = input.value.trim();
-  if (!message) return;
-
-  const chatBox = document.getElementById("chat-box");
-  chatBox.innerHTML += `<div class="message user"><strong>You:</strong> ${message}</div>`;
-  input.value = "";
-
-  const sessionId = getSessionId();
-
-  const endpoint = "/talk/gamemaster";
-
-  // Disable input and buttons during streaming
-  input.disabled = true;
-  document.getElementById("send-button").disabled = true;
-  document.getElementById("send-end-button").disabled = true;
-
-  // Create a container div for the streaming GM response
-  const gmMessageDiv = document.createElement("div");
-  gmMessageDiv.className = "message gm";
-  gmMessageDiv.innerHTML = `<strong>GM:</strong> <span class="streaming-response"></span>`;
-  chatBox.appendChild(gmMessageDiv);
-
-  const responseSpan = gmMessageDiv.querySelector(".streaming-response");
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: message,
-        session_id: sessionId,
-        force_end_turn: endTurn,
-      }),
-    });
-
-    if (!response.ok || !response.body) {
-      throw new Error("Network response was not ok or readable stream missing");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let done = false;
-    let fullResponse = "";
-
-    while (!done) {
-      const { value, done: doneReading } = await reader.read();
-      done = doneReading;
-      if (value) {
-        const chunk = decoder.decode(value, { stream: true });
-        fullResponse += chunk;
-        responseSpan.textContent += chunk;
-        chatBox.scrollTop = chatBox.scrollHeight; // Auto scroll as content arrives
-      }
-    }
-
-    // Optionally, do something with fullResponse after streaming ends
-    // e.g., store it locally or trigger additional UI changes
-
-  } catch (error) {
-    responseSpan.innerHTML += `<br><span style="color:red;">[Error receiving response]</span>`;
-    console.error("Streaming error:", error);
-  } finally {
-    // Re-enable inputs and buttons after streaming finishes or errors
-    input.disabled = false;
-    document.getElementById("send-button").disabled = false;
-    document.getElementById("send-end-button").disabled = false;
-    input.focus();
-  }
-  chatBox.scrollTop = chatBox.scrollHeight;
-}
-
-  // Listen for key presses: Enter sends, Ctrl+Enter sends & ends turn
-  document.getElementById("user-input").addEventListener("keydown", function (e) {
-    if (e.ctrlKey && e.key === "Enter") {
-      e.preventDefault();
-      sendMessage(true);  // Send and end turn
-    } else if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(false);  // Just send
-    }
-  });
-
-  // Optional: Add Send and Send & End Turn buttons
-  document.getElementById("send-button").addEventListener("click", function () {
-    sendMessage(false);
-  });
-
-  document.getElementById("send-end-button").addEventListener("click", function () {
-    sendMessage(true);
-  });
-  </script>
 </body>
 </html>
