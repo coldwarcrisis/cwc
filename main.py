@@ -122,6 +122,8 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
 
             # Iterate the stream synchronously inside the async generator
             for chunk in stream:
+                import pprint
+                pprint.pprint(chunk)
                 delta = chunk.choices[0].delta
                 content_part = delta.content or ""
                 if content_part:
