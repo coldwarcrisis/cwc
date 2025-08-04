@@ -147,38 +147,77 @@ async function selectAgency(agency) {
 }
 
   async function sendMessage(endTurn = false) {
-    const input = document.getElementById("user-input");
-    const message = input.value.trim();
-    if (!message) return;
+  const input = document.getElementById("user-input");
+  const message = input.value.trim();
+  if (!message) return;
 
-    const chatBox = document.getElementById("chat-box");
-    chatBox.innerHTML += `<div class="message user"><strong>You:</strong> ${message}</div>`;
-    input.value = "";
+  const chatBox = document.getElementById("chat-box");
+  chatBox.innerHTML += `<div class="message user"><strong>You:</strong> ${message}</div>`;
+  input.value = "";
 
-    const sessionId = getSessionId();  // Your existing method for retrieving session ID
+  const sessionId = getSessionId();
 
-    const endpoint = "/talk/gamemaster";
+  const endpoint = "/talk/gamemaster";
 
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: message,
-          session_id: sessionId,
-          force_end_turn: endTurn
-        })
-      });
+  // Disable input and buttons during streaming
+  input.disabled = true;
+  document.getElementById("send-button").disabled = true;
+  document.getElementById("send-end-button").disabled = true;
 
-      const data = await response.json();
-      chatBox.innerHTML += `<div class="message gm"><strong>GM:</strong> ${data.response}</div>`;
-    } catch (error) {
-      chatBox.innerHTML += `<div style="color:red;"><strong>Error:</strong> Failed to contact GM.</div>`;
-      console.error("Error:", error);
+  // Create a container div for the streaming GM response
+  const gmMessageDiv = document.createElement("div");
+  gmMessageDiv.className = "message gm";
+  gmMessageDiv.innerHTML = `<strong>GM:</strong> <span class="streaming-response"></span>`;
+  chatBox.appendChild(gmMessageDiv);
+
+  const responseSpan = gmMessageDiv.querySelector(".streaming-response");
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: message,
+        session_id: sessionId,
+        force_end_turn: endTurn,
+      }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error("Network response was not ok or readable stream missing");
     }
 
-    chatBox.scrollTop = chatBox.scrollHeight;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let done = false;
+    let fullResponse = "";
+
+    while (!done) {
+      const { value, done: doneReading } = await reader.read();
+      done = doneReading;
+      if (value) {
+        const chunk = decoder.decode(value, { stream: true });
+        fullResponse += chunk;
+        responseSpan.textContent += chunk;
+        chatBox.scrollTop = chatBox.scrollHeight; // Auto scroll as content arrives
+      }
+    }
+
+    // Optionally, do something with fullResponse after streaming ends
+    // e.g., store it locally or trigger additional UI changes
+
+  } catch (error) {
+    responseSpan.innerHTML += `<br><span style="color:red;">[Error receiving response]</span>`;
+    console.error("Streaming error:", error);
+  } finally {
+    // Re-enable inputs and buttons after streaming finishes or errors
+    input.disabled = false;
+    document.getElementById("send-button").disabled = false;
+    document.getElementById("send-end-button").disabled = false;
+    input.focus();
   }
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
 
   // Listen for key presses: Enter sends, Ctrl+Enter sends & ends turn
   document.getElementById("user-input").addEventListener("keydown", function (e) {

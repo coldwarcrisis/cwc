@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Depends, Body
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,7 +60,7 @@ def load_agency_prompt(agency: str | None) -> dict:
         return {"role": "system", "content": f.read()}
 @app.post("/talk/gamemaster")
 async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
-    start = time.perf_counter() #latency debug start
+    start = time.perf_counter()  # latency debug start
     data = await request.json()
     player_input = data.get("message", "")
     session_id = data.get("session_id", "default")
@@ -68,7 +68,7 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
     if not player_input:
         return {"error": "No message provided"}
 
-    # Try to load the session
+    # Load or create game session
     result = await db.execute(select(GameSession).filter_by(session_id=session_id))
     game_session = result.scalars().first()
 
@@ -83,16 +83,12 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
         )
         db.add(game_session)
         await db.commit()
-    
-   
 
-    # Initialize the turn manager
     turn_manager = get_turn_manager(session_id, game_session)
 
     if force_end_turn or turn_manager.should_advance_turn(player_input):
         turn_manager.next_turn()
 
-    # Prepare message for AI
     system_msg = turn_manager.get_system_message()
     pacing_note = turn_manager.get_pacing_instruction()
     full_sys_msg = f"{system_msg}\n{pacing_note}".strip()
@@ -102,63 +98,73 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
     messages = [
         system_prompt,
         {"role": "user", "content": wrapped_player_input},
-    ]   
-    mid1 = time.perf_counter()
-    # pre AI call
-    try:
-        loop = asyncio.get_running_loop()
-        completion = await loop.run_in_executor(None, partial(
-            client.chat.completions.create,
-            model="tngtech/deepseek-r1t2-chimera:free",
-            messages=messages,
-            extra_headers={
-                "HTTP-Referer": "http://localhost:8000",
-                "X-Title": "Cold War GM API",
-            },
-        ))
-        mid2 = time.perf_counter()
-        # raw AI receive
-        print("Full completion response:", completion)   # <---- here
-        ai_response = completion.choices[0].message.content
-        print("AI response extracted:", ai_response) 
-        turn_manager.handle_ai_response(ai_response)
-        turn_num = turn_manager.current_turn()
+    ]
 
-        db.add_all([
-            Message(
-                session_id=session_id,
-                sender="user",
-                content=player_input,
-                turn_number=turn_num,
-                pacing_mode=turn_manager.current_mode(),
-                in_game_date=turn_manager.current_date
-            ),
-            Message(
-                session_id=session_id,
-                sender="ai",
-                content=ai_response,
-                turn_number=turn_num,
-                pacing_mode=turn_manager.current_mode(),
-                in_game_date=turn_manager.current_date
-            ),
-        ])
-        await db.commit()
+    # Async generator for streaming response
+    async def stream_response():
+        full_response = ""
+        try:
+            # Start streaming completion
+            stream = client.chat.completions.create(
+                model="tngtech/deepseek-r1t2-chimera:free",
+                messages=messages,
+                stream=True,
+                extra_headers={
+                    "HTTP-Referer": "http://localhost:8000",
+                    "X-Title": "Cold War GM API",
+                },
+            )
 
-        # Update session
-        game_session.current_turn = turn_manager.current_turn()
-        game_session.pacing_mode = turn_manager.current_mode()
-        game_session.in_game_date = turn_manager.current_date_str()
-        await db.commit()
-        end = time.perf_counter()
-        print(f"Start to Pre AI: {mid1 - start:.2f}s, Pre AI to Post AI: {mid2 - mid1:.2f}s, Post AI to end: {end - mid2:.2f}s")
-        return {"response": ai_response}
+            # The returned stream is an async iterator
+            async for chunk in stream:
+                # chunk.choices[0].delta may contain partial message content
+                delta = chunk.choices[0].delta
+                content_part = delta.get("content", "")
+                if content_part:
+                    full_response += content_part
+                    yield content_part
 
-    except Exception as e:
-        import traceback
-        print("Exception occurred:", e)
-        traceback.print_exc()
-        return {"error": str(e)}
+            # After stream ends, update state and DB
+            turn_manager.handle_ai_response(full_response)
+            turn_num = turn_manager.current_turn()
 
+            db.add_all([
+                Message(
+                    session_id=session_id,
+                    sender="user",
+                    content=player_input,
+                    turn_number=turn_num,
+                    pacing_mode=turn_manager.current_mode(),
+                    in_game_date=turn_manager.current_date
+                ),
+                Message(
+                    session_id=session_id,
+                    sender="ai",
+                    content=full_response,
+                    turn_number=turn_num,
+                    pacing_mode=turn_manager.current_mode(),
+                    in_game_date=turn_manager.current_date
+                ),
+            ])
+            await db.commit()
+
+            # Update session info
+            game_session.current_turn = turn_manager.current_turn()
+            game_session.pacing_mode = turn_manager.current_mode()
+            game_session.in_game_date = turn_manager.current_date_str()
+            await db.commit()
+
+            end = time.perf_counter()
+            print(f"Streaming AI response done in {end - start:.2f}s")
+
+        except Exception as e:
+            import traceback
+            print("Exception occurred during streaming:", e)
+            traceback.print_exc()
+            # You might want to yield an error message or end the stream gracefully
+
+    # Return streaming response with content type text/event-stream for SSE, or text/plain
+    return StreamingResponse(stream_response(), media_type="text/plain")
 @app.get("/", response_class=HTMLResponse)
 async def get_chat(request: Request):
     return templates.TemplateResponse("chat.html", {"request": request})
@@ -226,3 +232,4 @@ async def set_newgame(data: dict = Body(...), db: AsyncSession = Depends(get_db)
     game_session.agency = agency
     await db.commit()
     return {"success": True, "updated": True}
+
