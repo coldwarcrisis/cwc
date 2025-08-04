@@ -100,31 +100,35 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
         {"role": "user", "content": wrapped_player_input},
     ]
 
-    # Async generator for streaming response
+    loop = asyncio.get_running_loop()
+
     async def stream_response():
         full_response = ""
-        try:
-            # Start streaming completion
-            stream = client.chat.completions.create(
-                model="tngtech/deepseek-r1t2-chimera:free",
-                messages=messages,
-                stream=True,
-                extra_headers={
-                    "HTTP-Referer": "http://localhost:8000",
-                    "X-Title": "Cold War GM API",
-                },
-            )
 
-            # The returned stream is an async iterator
-            async for chunk in stream:
-                # chunk.choices[0].delta may contain partial message content
+        try:
+            # Call the sync create() in a thread to avoid blocking event loop
+            def get_stream():
+                return client.chat.completions.create(
+                    model="tngtech/deepseek-r1t2-chimera:free",
+                    messages=messages,
+                    stream=True,
+                    extra_headers={
+                        "HTTP-Referer": "http://localhost:8000",
+                        "X-Title": "Cold War GM API",
+                    },
+                )
+
+            stream = await loop.run_in_executor(None, get_stream)
+
+            # Iterate the stream synchronously inside the async generator
+            for chunk in stream:
                 delta = chunk.choices[0].delta
                 content_part = delta.get("content", "")
                 if content_part:
                     full_response += content_part
                     yield content_part
 
-            # After stream ends, update state and DB
+            # After stream ends, update DB asynchronously
             turn_manager.handle_ai_response(full_response)
             turn_num = turn_manager.current_turn()
 
@@ -148,7 +152,6 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
             ])
             await db.commit()
 
-            # Update session info
             game_session.current_turn = turn_manager.current_turn()
             game_session.pacing_mode = turn_manager.current_mode()
             game_session.in_game_date = turn_manager.current_date_str()
@@ -161,9 +164,8 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
             import traceback
             print("Exception occurred during streaming:", e)
             traceback.print_exc()
-            # You might want to yield an error message or end the stream gracefully
+            # Optionally yield error info or end stream gracefully
 
-    # Return streaming response with content type text/event-stream for SSE, or text/plain
     return StreamingResponse(stream_response(), media_type="text/plain")
 @app.get("/", response_class=HTMLResponse)
 async def get_chat(request: Request):
