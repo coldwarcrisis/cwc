@@ -1,3 +1,6 @@
+import sys
+import asyncio
+import httpx
 from fastapi import FastAPI, Request, Depends, Body, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -5,28 +8,55 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
 import os
-from openai import OpenAI
 from session_database import async_session
 from typing import AsyncGenerator
 from models import Session as GameSession, Message
 from turn_manager import TurnManager
 from sqlalchemy import select
-import asyncio
 import time
 from pathlib import Path
+import json
+
+
 load_dotenv()
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+async def stream_openrouter_response_http(messages):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    json_data = {
+        "model": "tngtech/deepseek-r1t2-chimera:free",
+        "messages": messages,
+        "stream": True,
+    }
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=OPENROUTER_API_KEY,
-)
-
+    async with httpx.AsyncClient(timeout=None) as client:
+        async with client.stream("POST", url, headers=headers, json=json_data) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                # Strip 'data: ' prefix if present
+                if line.startswith("data: "):
+                    line = line[len("data: "):]
+                try:
+                    data = json.loads(line)
+                    if "choices" in data and data["choices"]:
+                        delta = data["choices"][0].get("delta", {})
+                        if "content" in delta:
+                            print(f"[OpenRouter content chunk] {delta['content']!r}")
+                            yield delta["content"]
+                except json.JSONDecodeError:
+                    print(f"[OpenRouter] JSON decode error for line: {line}")
+                    continue
 turn_managers = {}
 
 # Dependency to get a DB session
@@ -59,9 +89,9 @@ def load_agency_prompt(agency: str | None) -> dict:
 
 # --- Refactored streaming logic for reuse ---
 async def stream_response_ws(player_input: str, session_id: str, db: AsyncSession):
+    print(f"[Backend] Received player input: {player_input!r} for session: {session_id}")
     start = time.perf_counter()
     full_response = ""
-
     # Load or create game session
     result = await db.execute(select(GameSession).filter_by(session_id=session_id))
     game_session = result.scalars().first()
@@ -94,28 +124,10 @@ async def stream_response_ws(player_input: str, session_id: str, db: AsyncSessio
         {"role": "user", "content": wrapped_player_input},
     ]
 
-    loop = asyncio.get_running_loop()
-
     try:
-        def get_stream():
-            return client.chat.completions.create(
-                model="tngtech/deepseek-r1t2-chimera:free",
-                messages=messages,
-                stream=True,
-                extra_headers={
-                    "HTTP-Referer": "http://localhost:8000",
-                    "X-Title": "Cold War GM API",
-                },
-            )
-
-        stream = await loop.run_in_executor(None, get_stream)
-
-        for chunk in stream:
-            delta = chunk.choices[0].delta
-            content_part = delta.content or ""
-            if content_part:
-                full_response += content_part
-                yield content_part
+        async for content_part in stream_openrouter_response_http(messages):
+            full_response += content_part
+            yield content_part
 
         # After stream ends, update DB asynchronously
         turn_manager.handle_ai_response(full_response)
@@ -128,7 +140,7 @@ async def stream_response_ws(player_input: str, session_id: str, db: AsyncSessio
                 content=player_input,
                 turn_number=turn_num,
                 pacing_mode=turn_manager.current_mode(),
-                in_game_date=turn_manager.current_date
+                in_game_date=turn_manager.current_date.strftime("%Y-%m-%d")
             ),
             Message(
                 session_id=session_id,
@@ -136,11 +148,9 @@ async def stream_response_ws(player_input: str, session_id: str, db: AsyncSessio
                 content=full_response,
                 turn_number=turn_num,
                 pacing_mode=turn_manager.current_mode(),
-                in_game_date=turn_manager.current_date
+                in_game_date=turn_manager.current_date.strftime("%Y-%m-%d")
             ),
         ])
-        await db.commit()
-
         game_session.current_turn = turn_manager.current_turn()
         game_session.pacing_mode = turn_manager.current_mode()
         game_session.in_game_date = turn_manager.current_date_str()
@@ -185,22 +195,47 @@ async def talk_gamemaster(request: Request, db: AsyncSession = Depends(get_db)):
 @app.websocket("/ws/talk/gamemaster")
 async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(get_db)):
     await websocket.accept()
+    print("WebSocket connection accepted")
+
     try:
         while True:
-            data = await websocket.receive_json()
+            try:
+                data = await websocket.receive_json()
+                print(f"WS message received: {data}")
+            except WebSocketDisconnect:
+                print("Client disconnected cleanly")
+                break
+            except Exception as e:
+                print(f"[Error] Failed to parse incoming WebSocket JSON: {e}")
+                try:
+                    await websocket.send_text("[Error] Invalid JSON format")
+                except Exception:
+                    print("[Warning] Failed to send error to closed connection")
+                break  # Exit loop after bad JSON
+
             player_input = data.get("message")
             session_id = data.get("session_id")
-
+            print(f"[WebSocket] Received message: {player_input!r}, session_id: {session_id!r}")
             if not player_input or not session_id:
-                await websocket.send_text("[Error] Missing message or session_id")
+                try:
+                    await websocket.send_text("[Error] Missing 'message' or 'session_id'")
+                except Exception:
+                    print("[Warning] Failed to send error to closed connection")
                 continue
 
-            async for chunk in stream_response_ws(player_input, session_id, db):
-                await websocket.send_text(chunk)
+            try:
+                async for chunk in stream_response_ws(player_input, session_id, db):
+                    await websocket.send_text(chunk)
+            except Exception as e:
+                print(f"[Error] Exception during response stream: {e}")
+                break
 
-    except WebSocketDisconnect:
-        print("Client disconnected")
-
+    except Exception as e:
+        print(f"[Error] Unhandled exception in websocket loop: {e}")
+        try:
+            await websocket.close(code=1011, reason="Internal server error")
+        except RuntimeError:
+            print("[Warning] Tried to close an already closed WebSocket")
 # --- Other routes unchanged ---
 @app.get("/", response_class=HTMLResponse)
 async def get_chat(request: Request):

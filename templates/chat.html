@@ -134,7 +134,9 @@ function connectWebSocket() {
     }
   };
   ws.onmessage = (event) => {
+    console.log("WS message received:", event.data);
     appendToLatestGMMessage(event.data);
+    
   };
   ws.onclose = () => {
     wsConnected = false;
